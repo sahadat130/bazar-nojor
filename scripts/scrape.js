@@ -42,11 +42,18 @@ async function findLatestDhakaPdfUrl() {
 }
 
 function tokenizeToFields(text) {
-  const tokens = text.split(/\s+/).filter(Boolean);
+  // Match numbers directly in the raw text (not by whitespace-splitting first):
+  // a Bengali label sometimes has no space before the next number ("3.26প্র"),
+  // which a naive split-then-match would silently drop and misalign every
+  // row after it. The alternation's number branch is tried first, so it
+  // consumes a leading "-" that belongs to a negative number before the
+  // dash branch ever sees it — only genuinely standalone "-" placeholders
+  // (missing data) fall through to become null.
   const fields = [];
-  for (const t of tokens) {
-    if (/^-?\d+\.\d+$/.test(t)) fields.push(Number(t));
-    else if (t === '-') fields.push(null);
+  const re = /-?\d+\.\d{2}|-/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    fields.push(m[0] === '-' ? null : Number(m[0]));
   }
   return fields;
 }
