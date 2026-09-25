@@ -1,0 +1,12 @@
+{
+  "name": "bazar-nojor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dhaka retail market price tracker, sourced from dam.gov.bd",
+  "scripts": {
+    "scrape": "node scripts/scrape.js"
+  },
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
+  }
+}

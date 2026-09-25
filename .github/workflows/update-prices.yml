@@ -1,0 +1,42 @@
+name: Update bazar prices
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # 09:00 Asia/Dhaka
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run scraper
+        run: npm run scrape
+
+      - name: Open a PR with today's price update
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: daily price update from dam.gov.bd"
+          title: "Daily bazar price update"
+          body: |
+            Automated price pull from dam.gov.bd's daily retail report.
+
+            **Please review before merging** — the source PDF uses a legacy
+            Bengali font encoding that makes automated parsing best-effort.
+            Any row the scraper couldn't confidently parse is left unchanged
+            and listed in the workflow run log. Open this PR's Vercel preview
+            link and eyeball the table before merging.
+          branch: daily-price-update
+          delete-branch: true
