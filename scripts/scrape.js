@@ -120,11 +120,17 @@ async function main() {
 
   const withIds = items.map((it, i) => ({ id: slugify(it.name, i), ...it }));
 
+  // Preserve any manually-curated items (e.g. the LPG cylinder entry, which
+  // BERC only publishes as a scanned PDF and isn't scraped). These carry an
+  // id outside the "item-N" scheme this scraper generates, so a full
+  // replace of `items` below would otherwise silently drop them.
+  const manualItems = (existing.items || []).filter(it => !/^item-\d+$/.test(it.id));
+
   const out = {
     date: reportDate || existing.date || null,
     source: 'tcb.gov.bd',
     updatedAt: new Date().toISOString(),
-    items: withIds,
+    items: [...manualItems, ...withIds],
   };
 
   fs.writeFileSync(DATA_PATH, JSON.stringify(out, null, 2) + '\n');
