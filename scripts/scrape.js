@@ -18,8 +18,27 @@ const DATA_PATH = path.join(__dirname, '..', 'data.json');
 // GitHub's own Actions runners, not just a local network quirk. Scoped to
 // just these requests, not process-wide, since it's a known-broken public
 // government site and we're only reading public price data.
-const insecureDispatcher = new Agent({ connect: { rejectUnauthorized: false } });
-const fetchInsecure = (url) => fetch(url, { dispatcher: insecureDispatcher });
+const insecureDispatcher = new Agent({
+  connect: { rejectUnauthorized: false, timeout: 30000 },
+  headersTimeout: 60000,
+  bodyTimeout: 60000,
+});
+
+// tcb.gov.bd is slow and sometimes times out from GitHub's runners, so retry
+// a few times with a growing pause before giving up.
+async function fetchInsecure(url, attempts = 4) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fetch(url, { dispatcher: insecureDispatcher });
+    } catch (e) {
+      lastErr = e;
+      console.warn('fetch attempt ' + i + '/' + attempts + ' failed for ' + url + ': ' + (e.cause?.code || e.message));
+      if (i < attempts) await new Promise((r) => setTimeout(r, i * 5000));
+    }
+  }
+  throw lastErr;
+}
 
 async function findLatestDetailPageUrl() {
   const res = await fetchInsecure(LISTING_URL);
