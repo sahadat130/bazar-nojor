@@ -82,7 +82,7 @@ async function fetchFeed() {
   let lastErr;
   for (let i = 1; i <= 3; i++) {
     try {
-      const res = await fetch(FEED_URL, { headers: { 'User-Agent': 'bazar-nojor-tech-news/1.0' }, signal: AbortSignal.timeout(30000) });
+      const res = await fetch(FEED_URL, { signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (e) {
