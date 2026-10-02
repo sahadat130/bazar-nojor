@@ -1,10 +1,8 @@
 name: Post Bangladesh IT news
 
 on:
-  # Schedule paused: techshohor.com answers 403 to GitHub-hosted runners.
-  # Re-enable once a feed that runners can reach is chosen.
-  # schedule:
-  #   - cron: "15 */3 * * *"  # every 3 hours
+  schedule:
+    - cron: "15 */3 * * *"  # every 3 hours
   workflow_dispatch:
     inputs:
       mode:
