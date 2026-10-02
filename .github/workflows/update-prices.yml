@@ -3,7 +3,12 @@ name: Update bazar prices
 on:
   schedule:
     - cron: "0 3 * * *"  # 09:00 Asia/Dhaka
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      fb_dry_run:
+        description: "Facebook: print the post text only, do not publish"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -29,9 +34,11 @@ jobs:
         run: npm run scrape
 
       - name: Commit updated data.json to main
+        id: commit
         run: |
           if git diff --quiet -- data.json; then
             echo "data.json unchanged, nothing to commit."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -39,3 +46,18 @@ jobs:
           git add data.json
           git commit -m "chore: daily price update from tcb.gov.bd"
           git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Only runs when new prices were just committed, so a re-run on the same
+      # day does not post twice. Without FB_PAGE_ID / FB_PAGE_TOKEN secrets the
+      # script just prints the post text and succeeds.
+      - name: Post top movers to Facebook
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          # Scheduled runs publish for real; manual runs default to a dry run
+          # unless "fb_dry_run" is unticked in the Run workflow dialog.
+          FB_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.fb_dry_run && 'true' || 'false' }}
+        run: node scripts/post-facebook.js
