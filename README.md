@@ -21,19 +21,6 @@
 
 **একটা টেকনিক্যাল নোট:** tcb.gov.bd (ও dam.gov.bd, একই সরকারি হোস্টিং প্ল্যাটফর্ম) সার্ভার সাইডে SSL সার্টিফিকেট চেইন অসম্পূর্ণভাবে কনফিগার করা — তাই স্ক্রিপ্টে এই নির্দিষ্ট সাইটের জন্য certificate verification শিথিল করা আছে (`scripts/scrape.js`-এ `rejectUnauthorized: false`), শুধু এই দুটো রিকোয়েস্টের জন্য, পুরো স্ক্রিপ্টের জন্য না। এটা একটা পাবলিক সরকারি ফাইল পড়ছে বলে ঝুঁকি কম, কিন্তু জেনে রাখা ভালো।
 
-## Facebook পেজে অটো পোস্ট (ঐচ্ছিক)
-
-দাম বদলালে workflow প্রতিদিন সবচেয়ে বেশি বাড়া ও কমা ৩টা করে পণ্য পেজে পোস্ট করতে পারে (`scripts/post-facebook.js`)। সেটআপ না করলে কিছুই পোস্ট হয় না, শুধু টেক্সট লগে ছাপা হয়।
-
-1. [Meta for Developers](https://developers.facebook.com)-এ একটা অ্যাপ খুলুন, পেজের জন্য **Page Access Token** নিন (long-lived)
-2. GitHub রিপো → **Settings → Secrets and variables → Actions**:
-   - Secrets: `FB_PAGE_ID`, `FB_PAGE_TOKEN`
-   - Variables (ঐচ্ছিক): `SITE_URL` (আপনার Vercel লিংক, পোস্টের শেষে যাবে)
-3. আগে **Actions → Update bazar prices → Run workflow** থেকে "fb_dry_run" টিক রেখে চালিয়ে লগে পোস্টের টেক্সট দেখে নিন
-4. টিক খুলে একবার চালালে সত্যিকারের পোস্ট যাবে; এরপর দৈনিক রান নিজেই পোস্ট করবে
-
-টোকেন কখনো কোডে বা চ্যাটে দেবেন না, শুধু GitHub Secrets-এ রাখুন। একই দিনে দুবার রান হলেও শুধু প্রথমবার (যখন `data.json` বদলায়) পোস্ট হয়।
-
 ## বাংলাদেশের আইটি খবর অটো-পোস্ট (ঐচ্ছিক)
 
 `.github/workflows/tech-news.yml` প্রতি ৩ ঘণ্টায় [TechShohor](https://techshohor.com)-এর পাবলিক RSS ফিড দেখে নতুন খবর পেলে পেজে পোস্ট করে: **শিরোনাম + ছোট সারাংশ + "সূত্র: TechShohor" + মূল লিংক**। পুরো লেখা কপি করে না। একই Facebook সিক্রেট (`FB_PAGE_ID`, `FB_PAGE_TOKEN`) ব্যবহার করে।
