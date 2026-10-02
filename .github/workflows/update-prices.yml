@@ -52,7 +52,7 @@ jobs:
       # day does not post twice. Without FB_PAGE_ID / FB_PAGE_TOKEN secrets the
       # script just prints the post text and succeeds.
       - name: Post top movers to Facebook
-        if: steps.commit.outputs.changed == 'true'
+        if: steps.commit.outputs.changed == 'true' || (github.event_name == 'workflow_dispatch' && inputs.fb_dry_run)
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
