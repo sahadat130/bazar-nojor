@@ -1,25 +1,31 @@
-// Posts new Bangladesh IT headlines (from TechShohor's public RSS feed) to a
-// Facebook Page: headline + short summary + credit + link to the original.
-// It never copies full articles.
+// Posts new Bangladesh tech headlines (from public RSS feeds) to a Facebook
+// Page: original English headline + short excerpt + credit + link to the
+// original article. It never copies full articles and never translates.
 //
 // TECH_POST_MODE:
 //   dry     print what would be posted; change nothing (default if no creds)
 //   draft   create UNPUBLISHED posts (published=false) for an admin to review
 //   publish post publicly right away
 //
-// A state file remembers which articles were already handled. On the very
-// first real run it only records what is currently in the feed (so we don't
-// flood the page with old news); only articles that appear afterwards post.
+// A state file remembers which articles were already handled. The first time
+// a source is seen it is only recorded (baseline), so old articles are never
+// flooded onto the page; only articles that appear afterwards get posted.
 const fs = require('fs');
 const path = require('path');
 
-const FEED_URL = process.env.TECH_FEED_URL || 'https://techshohor.com/feed';
+// `only`: if set, an article from that source is posted only when its title or
+// excerpt matches (the feed is global, we want just the Bangladesh angle).
+const SOURCES = [
+  { name: 'The Daily Star', url: 'https://www.thedailystar.net/tech-startup/rss.xml' },
+  { name: 'The Business Standard', url: 'https://www.tbsnews.net/tech/rss.xml' },
+  { name: 'Rest of World', url: 'https://restofworld.org/feed/', only: /bangladesh|dhaka|south asia/i },
+];
+
 const STATE_PATH = process.env.TECH_STATE_PATH || path.join(__dirname, '..', 'data', 'tech-news-state.json');
-const SOURCE_NAME = 'TechShohor';
 const GRAPH_VERSION = 'v21.0';
 const MAX_PER_RUN = 5;
 const MAX_AGE_DAYS = 3;
-const MAX_SEEN = 300;
+const MAX_SEEN = 400;
 const SUMMARY_CHARS = 220;
 
 const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”' };
@@ -33,36 +39,39 @@ const text = (xml) =>
   decode(xml.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 function tag(block, name) {
-  const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`));
+  const m = block.match(new RegExp(`<${name}[^>]*>([^]*?)</${name}>`));
   return m ? m[1] : '';
 }
 
 function summarize(raw) {
   let s = text(raw);
-  s = s.replace(/^টেক শহর[^:।]{0,30}:\s*/, ''); // outlet byline
-  s = s.replace(/^(?:[^\s:।]+\s){1,3}[^\s:।]+\s:\s+/, ''); // reporter byline: "name name : text"
-  s = s.replace(/The post .* appeared first on .*$/i, '').replace(/Read more.*$/i, '').replace(/…\s*$/, '').trim();
+  s = s.replace(/The post .* appeared first on .*$/i, '').replace(/(Read more|Continue reading).*$/i, '').replace(/…\s*$/, '').trim();
   if (s.length <= SUMMARY_CHARS) return s;
   const cut = s.slice(0, SUMMARY_CHARS);
   return cut.slice(0, Math.max(cut.lastIndexOf(' '), 80)).replace(/[,\s।:;-]+$/, '') + '…';
 }
 
-function parseFeed(xml) {
+function parseFeed(xml, source) {
   return xml
-    .split('<item>')
+    .split(/<item[ >]/)
     .slice(1)
-    .map((b) => ({
-      id: text(tag(b, 'guid')) || text(tag(b, 'link')),
-      title: text(tag(b, 'title')),
-      link: text(tag(b, 'link')),
-      date: new Date(text(tag(b, 'pubDate'))),
-      summary: summarize(tag(b, 'description')),
-    }))
-    .filter((i) => i.id && i.title && i.link && !isNaN(i.date));
+    .map((b) => {
+      const link = text(tag(b, 'link'));
+      return {
+        source: source.name,
+        id: `${source.name}|${text(tag(b, 'guid')) || link}`,
+        title: text(tag(b, 'title')),
+        link,
+        date: new Date(text(tag(b, 'pubDate'))),
+        summary: summarize(tag(b, 'description')),
+      };
+    })
+    .filter((i) => i.title && i.link && !isNaN(i.date))
+    .filter((i) => !source.only || source.only.test(`${i.title} ${i.summary}`));
 }
 
 function buildMessage(it) {
-  return [it.title, '', it.summary, '', `সূত্র: ${SOURCE_NAME}`].filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n');
+  return [it.title, '', it.summary, '', `সূত্র: ${it.source}`].filter((l, i, a) => !(l === '' && (i === 2 || a[i - 1] === ''))).join('\n');
 }
 
 function loadState() {
@@ -73,22 +82,25 @@ function loadState() {
   }
 }
 
-function saveState(seen) {
+function saveState(seen, sources) {
   fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
-  fs.writeFileSync(STATE_PATH, JSON.stringify({ updatedAt: new Date().toISOString(), seen: seen.slice(-MAX_SEEN) }, null, 2) + '\n');
+  fs.writeFileSync(
+    STATE_PATH,
+    JSON.stringify({ updatedAt: new Date().toISOString(), sources, seen: seen.slice(-MAX_SEEN) }, null, 2) + '\n'
+  );
 }
 
-async function fetchFeed() {
+async function fetchText(url) {
   let lastErr;
   for (let i = 1; i <= 3; i++) {
     try {
-      const res = await fetch(FEED_URL, { signal: AbortSignal.timeout(30000) });
+      const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (e) {
       lastErr = e;
-      console.warn(`feed attempt ${i}/3 failed: ${e.cause?.code || e.message}`);
-      if (i < 3) await new Promise((r) => setTimeout(r, i * 4000));
+      console.warn(`  attempt ${i}/3 failed for ${url}: ${e.cause?.code || e.message}`);
+      if (i < 3) await new Promise((r) => setTimeout(r, i * 3000));
     }
   }
   throw lastErr;
@@ -109,8 +121,16 @@ async function postToFacebook(it, mode) {
 }
 
 async function main() {
-  const items = parseFeed(await fetchFeed()).sort((a, b) => a.date - b.date);
-  console.log(`Feed has ${items.length} items.`);
+  const fetched = {}; // source name -> items, only for sources that loaded
+  for (const src of SOURCES) {
+    try {
+      fetched[src.name] = parseFeed(await fetchText(src.url), src);
+      console.log(`${src.name}: ${fetched[src.name].length} usable items`);
+    } catch (e) {
+      console.warn(`${src.name}: FAILED (${e.message}), skipping this run`);
+    }
+  }
+  if (Object.keys(fetched).length === 0) throw new Error('every source failed');
 
   const haveCreds = process.env.FB_PAGE_ID && process.env.FB_PAGE_TOKEN;
   let mode = (process.env.TECH_POST_MODE || 'draft').toLowerCase();
@@ -119,19 +139,24 @@ async function main() {
 
   const state = loadState();
   const seen = new Set(state ? state.seen : []);
+  const knownSources = new Set(state ? state.sources || [] : []);
 
-  if (!state) {
+  const all = Object.values(fetched).flat().sort((a, b) => a.date - b.date);
+  const newSources = Object.keys(fetched).filter((n) => !knownSources.has(n));
+
+  if (newSources.length) {
+    const baseline = all.filter((i) => newSources.includes(i.source));
     if (mode === 'dry') {
-      console.log('No state yet. Dry run preview of the 2 newest items (a real run would only record the baseline):\n');
-      items.slice(-2).forEach((it) => console.log(buildMessage(it) + `\n${it.link}\n---`));
-      return;
+      console.log(`\nDry run. First time seeing: ${newSources.join(', ')}. A real run would only record their ${baseline.length} current items as already seen. Preview of the 3 newest:\n`);
+      baseline.slice(-3).forEach((it) => console.log(buildMessage(it) + `\n${it.link}\n---`));
+    } else {
+      baseline.forEach((i) => seen.add(i.id));
+      newSources.forEach((n) => knownSources.add(n));
+      console.log(`Recorded baseline for ${newSources.join(', ')} (${baseline.length} items), posted nothing for them.`);
     }
-    saveState(items.map((i) => i.id));
-    console.log(`First run: recorded ${items.length} existing items as already seen, posted nothing.`);
-    return;
   }
 
-  const fresh = items.filter((i) => !seen.has(i.id));
+  const fresh = all.filter((i) => !newSources.includes(i.source) && !seen.has(i.id));
   const cutoff = Date.now() - MAX_AGE_DAYS * 864e5;
   const stale = fresh.filter((i) => i.date.getTime() < cutoff);
   const postable = fresh.filter((i) => i.date.getTime() >= cutoff).slice(0, MAX_PER_RUN);
@@ -146,15 +171,15 @@ async function main() {
     }
     try {
       const id = await postToFacebook(it, mode);
-      console.log(`${mode === 'draft' ? 'Drafted' : 'Posted'}: ${it.title.slice(0, 50)} -> ${id}`);
+      console.log(`${mode === 'draft' ? 'Drafted' : 'Posted'}: [${it.source}] ${it.title.slice(0, 60)} -> ${id}`);
       done.push(it.id);
     } catch (e) {
-      console.error('Failed:', it.title.slice(0, 50), '|', e.message);
+      console.error('Failed:', it.title.slice(0, 60), '|', e.message);
       failed = true;
       break; // keep order; retry this and later items next run
     }
   }
-  if (mode !== 'dry') saveState(done);
+  if (mode !== 'dry') saveState(done, [...knownSources]);
   if (failed) process.exit(1);
 }
 
