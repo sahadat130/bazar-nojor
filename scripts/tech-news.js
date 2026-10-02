@@ -144,22 +144,29 @@ async function main() {
   const all = Object.values(fetched).flat().sort((a, b) => a.date - b.date);
   const newSources = Object.keys(fetched).filter((n) => !knownSources.has(n));
 
+  // One-off: post the N newest articles right now instead of only baselining
+  // (TECH_BACKFILL=N). Everything else currently in the feeds is still marked
+  // as seen, so later runs only post what appears afterwards.
+  const backfillN = parseInt(process.env.TECH_BACKFILL || '0', 10) || 0;
+  const forced = backfillN > 0 ? all.filter((i) => !seen.has(i.id)).slice(-backfillN) : [];
+  const forcedIds = new Set(forced.map((i) => i.id));
+
   if (newSources.length) {
     const baseline = all.filter((i) => newSources.includes(i.source));
     if (mode === 'dry') {
       console.log(`\nDry run. First time seeing: ${newSources.join(', ')}. A real run would only record their ${baseline.length} current items as already seen. Preview of the 3 newest:\n`);
       baseline.slice(-3).forEach((it) => console.log(buildMessage(it) + `\n${it.link}\n---`));
     } else {
-      baseline.forEach((i) => seen.add(i.id));
+      baseline.filter((i) => !forcedIds.has(i.id)).forEach((i) => seen.add(i.id));
       newSources.forEach((n) => knownSources.add(n));
       console.log(`Recorded baseline for ${newSources.join(', ')} (${baseline.length} items), posted nothing for them.`);
     }
   }
 
-  const fresh = all.filter((i) => !newSources.includes(i.source) && !seen.has(i.id));
+  const fresh = all.filter((i) => (!newSources.includes(i.source) || forcedIds.has(i.id)) && !seen.has(i.id));
   const cutoff = Date.now() - MAX_AGE_DAYS * 864e5;
-  const stale = fresh.filter((i) => i.date.getTime() < cutoff);
-  const postable = fresh.filter((i) => i.date.getTime() >= cutoff).slice(0, MAX_PER_RUN);
+  const stale = fresh.filter((i) => !forcedIds.has(i.id) && i.date.getTime() < cutoff);
+  const postable = fresh.filter((i) => forcedIds.has(i.id) || i.date.getTime() >= cutoff).slice(0, Math.max(MAX_PER_RUN, forced.length));
   console.log(`New: ${fresh.length}, too old to post: ${stale.length}, posting now: ${postable.length} (mode=${mode}).`);
 
   const done = [...seen, ...stale.map((i) => i.id)];
