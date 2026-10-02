@@ -1,0 +1,20 @@
+name: Probe feeds (temporary)
+on:
+  workflow_dispatch: {}
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch candidate feeds from a GitHub runner
+        run: |
+          for u in \
+            https://www.prothomalo.com/feed \
+            https://www.bd24live.com/bangla/feed \
+            https://www.dhakapost.com/rss/rss.xml \
+            https://www.channelionline.com/feed \
+            https://www.tbsnews.net/bangla/rss.xml \
+            https://techshohor.com/feed; do
+            code=$(curl -sL -m 25 -o /tmp/f.xml -w "%{http_code}" "$u")
+            n=$(grep -c -E '<item[ >]' /tmp/f.xml || true)
+            echo "PROBE $code items=$n $u"
+          done
