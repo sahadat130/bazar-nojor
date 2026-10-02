@@ -1,0 +1,56 @@
+name: Post Bangladesh IT news
+
+on:
+  schedule:
+    - cron: "15 */3 * * *"  # every 3 hours
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry = print only, draft = unpublished posts for review, publish = post publicly"
+        type: choice
+        options: [dry, draft, publish]
+        default: dry
+
+permissions:
+  contents: write
+
+# Shares nothing with the price workflow, but serialises runs of this one so
+# two overlapping runs cannot post the same article twice.
+concurrency:
+  group: tech-news
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch feed and post new articles
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          # Scheduled runs use the TECH_POST_MODE repo variable (defaults to
+          # "draft" so nothing goes public until you opt in with "publish").
+          TECH_POST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || vars.TECH_POST_MODE || 'draft' }}
+        run: node scripts/tech-news.js
+
+      # Always runs, even if a later article failed to post, so articles that
+      # were already posted are remembered and never posted twice.
+      - name: Save which articles were handled
+        if: always()
+        run: |
+          if git diff --quiet -- data/tech-news-state.json && [ -z "$(git ls-files --others --exclude-standard data/tech-news-state.json)" ]; then
+            echo "state unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/tech-news-state.json
+          git commit -m "chore: record handled tech news"
+          git pull --rebase origin main
+          git push origin HEAD:main
